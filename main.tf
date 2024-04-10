@@ -2,23 +2,33 @@ provider "aws" {
   profile = "ctl-dev"
 }
 
+locals {
+  vpc_cidr = "10.0.0.0/16"
+}
 module "vpc" {
   source    = "./modules/vpc"
   region    = "us-east-1"
-  vpc_cidr  = "10.0.0.0/16"
+  vpc_cidr  = local.vpc_cidr
 }
 
-# module "rds_cluster" {
-#   source = "./modules/rds"
-
-# }
-
-data "aws_secretsmanager_secret" "hasura_admin_secret" {
+data "aws_secretsmanager_secret" "hasura_secrets" {
   name = "test/Hasura/AdminSecret"
 }
 
-data "aws_secretsmanager_secret_version" "hasura_admin_secret_latest" {
-  secret_id = data.aws_secretsmanager_secret.hasura_admin_secret.id
+data "aws_secretsmanager_secret_version" "hasura_secrets_latest" {
+  secret_id = data.aws_secretsmanager_secret.hasura_secrets.id
+}
+
+locals {
+  rds_password = jsondecode(data.aws_secretsmanager_secret_version.hasura_secrets_latest.secret_string)["HASURA_MAIN_POSTGRES_DB_PASSWORD"]
+}
+
+module "rds_cluster" {
+  source     = "./modules/rds"
+  password   = local.rds_password
+  vpc_id     = module.vpc.main_vpc_id
+  vpc_cidr   = local.vpc_cidr
+  subnet_ids = [module.vpc.subnet1_id, module.vpc.subnet2_id]
 }
 
 resource "aws_ecs_cluster" "hasura_cluster" {
@@ -43,11 +53,29 @@ resource "aws_ecs_task_definition" "hasura" {
           hostPort      = 8080
         }
       ]
+      environment = [
+        {
+          name  = "HASURA_MAIN_POSTGRES_DB_ENDPOINT"
+          value = module.rds_cluster.rds_endpoint
+        },
+        {
+          name  = "HASURA_MAIN_POSTGRES_DB_NAME"
+          value = module.rds_cluster.rds_db_name
+        },
+        {
+          name  = "HASURA_MAIN_POSTGRES_DB_USERNAME"
+          value = module.rds_cluster.rds_username
+        },
+      ]
       secrets = [
         {
           name      = "HASURA_GRAPHQL_ADMIN_SECRET"
-          valueFrom = "arn:aws:secretsmanager:us-east-1:538208764089:secret:test/Hasura/AdminSecret-Acog7B"
-        }
+          valueFrom = data.aws_secretsmanager_secret.hasura_secrets.arn
+        },
+        {
+          name      = "HASURA_MAIN_POSTGRES_DB_PASSWORD"
+          valueFrom = data.aws_secretsmanager_secret.hasura_secrets.arn
+        },
       ]
     }
   ])
