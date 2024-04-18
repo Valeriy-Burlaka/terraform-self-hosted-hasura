@@ -1,4 +1,0 @@
-- https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/secretsmanager_secret_version
-- https://repost.aws/knowledge-center/ecs-cpu-allocation
-- https://www.youtube.com/watch?v=yduHaOj3XMg
-- https://docs.aws.amazon.com/prescriptive-guidance/latest/secure-sensitive-data-secrets-manager-terraform/using-secrets-manager-and-terraform.html
